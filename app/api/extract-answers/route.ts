@@ -74,7 +74,7 @@ Return ONLY valid JSON, no other text.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Using gpt-4o-mini for cost efficiency, can be changed to gpt-4o or gpt-3.5-turbo
+        model: 'gpt-5', // Using gpt-4o-mini for cost efficiency, can be changed to gpt-4o or gpt-3.5-turbo
         messages: [
           {
             role: 'system',

@@ -102,7 +102,7 @@ export async function transcribeHindiAudio(
   onProgress?: ProgressCallback
 ): Promise<TranscriptionResult> {
   // Split file into ~10-minute chunks
-  const chunks = await splitAudioFile(audioFile, 10);
+  const chunks = await splitAudioFile(audioFile, 5);
   const totalChunks = chunks.length;
 
   let combinedHindi = '';
