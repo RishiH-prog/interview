@@ -109,7 +109,14 @@ Return ONLY valid JSON, no other text.`;
     }
 
     // Parse JSON response
-    let answers;
+    type AnswerObject = {
+      question?: string;
+      answer: string;
+      quote?: string | null;
+      reasoning?: string | null;
+    };
+    
+    let answers: AnswerObject[] = [];
     try {
       // Try to parse as JSON object first (if GPT wrapped it)
       const parsed = JSON.parse(content);
@@ -140,8 +147,9 @@ Return ONLY valid JSON, no other text.`;
     // Validate and ensure we have answers for all questions
     if (!Array.isArray(answers) || answers.length !== questions.length) {
       // If GPT didn't return the right number, create fallback answers
-      answers = questions.map((question: string, index: number) => {
-        const found = answers?.find((a: any) => a.question === question || a.question?.includes(question.substring(0, 20)));
+      const existingAnswers = answers;
+      answers = questions.map((question: string, index: number): AnswerObject => {
+        const found = existingAnswers.find((a: AnswerObject) => a.question === question || a.question?.includes(question.substring(0, 20)));
         return {
           question,
           answer: found?.answer || '[Could not extract answer from transcript]',
@@ -153,7 +161,7 @@ Return ONLY valid JSON, no other text.`;
 
     // Ensure all answers have the correct question format
     const finalAnswers = questions.map((question: string, index: number) => {
-      const answerObj = answers[index] || answers.find((a: any) => 
+      const answerObj = answers[index] || answers.find((a: AnswerObject) => 
         a.question === question || 
         a.question?.toLowerCase().includes(question.toLowerCase().substring(0, 20))
       );
