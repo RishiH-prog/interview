@@ -5,13 +5,14 @@ import {
   getGuides,
   saveGuide,
   deleteGuide,
+  getActiveGuides,
   getInterviews,
   saveInterview,
   deleteInterview,
   generateLoremAnswer,
   type Guide,
   type Interview,
-} from '@/lib/storage';
+} from '@/lib/database';
 import { parseGuideFile, generateId, downloadTextFile } from '@/lib/utils';
 import { transcribeHindiAudio, extractAnswersWithGPT } from '@/lib/transcription';
 import Toast from '@/components/Toast';
@@ -53,9 +54,18 @@ export default function Home() {
     loadData();
   }, []);
 
-  const loadData = () => {
-    setGuides(getGuides());
-    setInterviews(getInterviews());
+  const loadData = async () => {
+    try {
+      const [guidesData, interviewsData] = await Promise.all([
+        getGuides(),
+        getInterviews(),
+      ]);
+      setGuides(guidesData);
+      setInterviews(interviewsData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      showToast('Error loading data. Using cached data.', 'error');
+    }
   };
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -63,12 +73,12 @@ export default function Home() {
   };
 
   // Guide upload handler
-  const handleGuideUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleGuideUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = e.target?.result as string;
       const questions = parseGuideFile(text);
       
@@ -87,25 +97,40 @@ export default function Home() {
         active: true,
       };
 
-      saveGuide(newGuide);
-      loadData();
-      showToast(`Guide "${guideName}" uploaded successfully!`);
+      try {
+        await saveGuide(newGuide);
+        await loadData();
+        showToast(`Guide "${guideName}" uploaded successfully!`);
+      } catch (error) {
+        console.error('Error saving guide:', error);
+        showToast('Error saving guide', 'error');
+      }
       event.target.value = '';
     };
     reader.readAsText(file);
   };
 
-  const handleToggleGuideActive = (guide: Guide) => {
-    saveGuide({ ...guide, active: !guide.active });
-    loadData();
-    showToast(`Guide "${guide.name}" ${!guide.active ? 'activated' : 'deactivated'}`);
+  const handleToggleGuideActive = async (guide: Guide) => {
+    try {
+      await saveGuide({ ...guide, active: !guide.active });
+      await loadData();
+      showToast(`Guide "${guide.name}" ${!guide.active ? 'activated' : 'deactivated'}`);
+    } catch (error) {
+      console.error('Error toggling guide:', error);
+      showToast('Error updating guide', 'error');
+    }
   };
 
-  const handleDeleteGuide = (guideId: string) => {
+  const handleDeleteGuide = async (guideId: string) => {
     if (confirm('Are you sure you want to delete this guide?')) {
-      deleteGuide(guideId);
-      loadData();
-      showToast('Guide deleted successfully');
+      try {
+        await deleteGuide(guideId);
+        await loadData();
+        showToast('Guide deleted successfully');
+      } catch (error) {
+        console.error('Error deleting guide:', error);
+        showToast('Error deleting guide', 'error');
+      }
     }
   };
 
@@ -183,9 +208,14 @@ export default function Home() {
       englishTranscript,
     };
 
-    saveInterview(newInterview);
-    loadData();
-    showToast('Interview created successfully!');
+    try {
+      await saveInterview(newInterview);
+      await loadData();
+      showToast('Interview created successfully!');
+    } catch (error) {
+      console.error('Error saving interview:', error);
+      showToast('Error saving interview', 'error');
+    }
     
     // Reset form
     setSelectedGuideId('');
@@ -201,20 +231,30 @@ export default function Home() {
     setIsModalOpen(true);
   };
 
-  const handleSaveInterview = (interview: Interview) => {
-    saveInterview(interview);
-    loadData();
-    setIsModalOpen(false);
-    setSelectedInterview(null);
-    showToast('Interview saved as draft');
+  const handleSaveInterview = async (interview: Interview) => {
+    try {
+      await saveInterview(interview);
+      await loadData();
+      setIsModalOpen(false);
+      setSelectedInterview(null);
+      showToast('Interview saved as draft');
+    } catch (error) {
+      console.error('Error saving interview:', error);
+      showToast('Error saving interview', 'error');
+    }
   };
 
-  const handleApproveInterview = (interview: Interview) => {
-    saveInterview(interview);
-    loadData();
-    setIsModalOpen(false);
-    setSelectedInterview(null);
-    showToast('Interview approved and submitted!');
+  const handleApproveInterview = async (interview: Interview) => {
+    try {
+      await saveInterview(interview);
+      await loadData();
+      setIsModalOpen(false);
+      setSelectedInterview(null);
+      showToast('Interview approved and submitted!');
+    } catch (error) {
+      console.error('Error approving interview:', error);
+      showToast('Error approving interview', 'error');
+    }
   };
 
   const handleDownloadInterview = (interview: Interview) => {
@@ -325,6 +365,7 @@ ${qa.reasoning ? `Reasoning: ${qa.reasoning}` : ''}
   const uniqueFarmers = Array.from(new Set(interviews.map(i => i.farmerName))).sort();
 
   // Compute active guides from state to avoid hydration mismatch
+  // Note: getActiveGuides is async, so we filter from guides state instead
   const activeGuides = guides.filter(g => g.active);
 
   return (

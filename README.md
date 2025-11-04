@@ -210,13 +210,16 @@ Stored in `localStorage` under key `ankur_interviews`:
 
 ## Notes
 
-- All data is stored in browser localStorage and persists between page refreshes
+- **Data Storage**: Currently uses browser localStorage (device-specific)
+  - Data persists on the same device/browser
+  - **Data does NOT sync across devices** (phone vs laptop have separate storage)
+  - To enable cross-device sync, see [DATABASE_SETUP.md](./DATABASE_SETUP.md) for database setup
 - **Audio transcription** uses OpenAI Whisper API and requires an API key
 - **Hindi audio** is transcribed to Hindi text and translated to English
 - **Both transcripts are saved** (Hindi and English) for reference
 - **Answer extraction** uses GPT-4o-mini to intelligently extract answers from the English transcript
 - All processing is done server-side via Next.js API routes for security
-- Approved interviews are read-only and cannot be edited
+- Answers can always be edited (except transcripts which are read-only)
 - Multiple guides can be active simultaneously
 - This is a v0 prototype designed for demonstration purposes
 
