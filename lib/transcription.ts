@@ -180,13 +180,14 @@ export function parseAnswersFromTranscription(
 
 /**
  * Smart parsing using timestamps if available
+ * DEPRECATED: This function is not used - we use GPT for answer extraction instead
  */
 export function parseAnswersWithTimestamps(
   transcription: TranscriptionResult,
   questions: string[]
 ): Array<{ question: string; answer: string }> {
   if (!transcription.segments) {
-    return parseAnswersFromTranscription(transcription.text, questions);
+    return parseAnswersFromTranscription(transcription.englishText, questions);
   }
 
   // Group segments by time proximity
