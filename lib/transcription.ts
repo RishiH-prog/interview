@@ -22,7 +22,7 @@ async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
     console.log(`[ElevenLabs] File is ${fileSizeMB.toFixed(2)}MB, uploading directly to Supabase Storage...`);
     
     try {
-      // Import Supabase client (already configured with NEXT_PUBLIC_ variables)
+      // Import Supabase client
       const { supabase } = await import('./supabase');
       
       // Generate unique filename
@@ -32,9 +32,12 @@ async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
       // Convert file to array buffer
       const arrayBuffer = await audioFile.arrayBuffer();
       
-      console.log(`[ElevenLabs] Uploading ${fileSizeMB.toFixed(2)}MB to Supabase Storage bucket 'audio-files'...`);
+      console.log(`[ElevenLabs] Uploading ${fileSizeMB.toFixed(2)}MB directly to Supabase Storage...`);
       
       // Upload directly to Supabase Storage
+      // NOTE: This requires the bucket to be configured properly:
+      // Option 1: Make bucket public (Settings > Storage > audio-files > Public bucket)
+      // Option 2: Configure RLS policies to allow INSERT operations
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('audio-files')
         .upload(fileName, arrayBuffer, {
@@ -43,6 +46,10 @@ async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
         });
       
       if (uploadError) {
+        // Provide helpful error message
+        if (uploadError.message.includes('row-level security') || uploadError.message.includes('RLS')) {
+          throw new Error(`Supabase Storage RLS policy blocking upload. Please configure the 'audio-files' bucket: 1) Go to Supabase Dashboard > Storage, 2) Create bucket 'audio-files' if it doesn't exist, 3) Make it public OR configure RLS policies to allow INSERT operations. Error: ${uploadError.message}`);
+        }
         throw new Error(`Failed to upload to Supabase: ${uploadError.message}`);
       }
       
@@ -52,27 +59,10 @@ async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
         .getPublicUrl(fileName);
       
       fileUrl = urlData.publicUrl;
-      console.log(`[ElevenLabs] File uploaded to Supabase: ${fileUrl}`);
+      console.log(`[ElevenLabs] File uploaded successfully: ${fileUrl}`);
     } catch (error) {
       console.error('[ElevenLabs] Supabase upload error:', error);
-      // Fallback: try using the API route (might fail for very large files)
-      console.log('[ElevenLabs] Falling back to API route upload...');
-      
-      const uploadFormData = new FormData();
-      uploadFormData.append('file', audioFile);
-      
-      const uploadResponse = await fetch('/api/upload-to-supabase', {
-        method: 'POST',
-        body: uploadFormData,
-      });
-      
-      if (uploadResponse.ok) {
-        const uploadData = await uploadResponse.json();
-        fileUrl = uploadData.fileUrl;
-        console.log(`[ElevenLabs] File uploaded via API: ${fileUrl}`);
-      } else {
-        throw new Error('Failed to upload large file. Please ensure Supabase Storage is configured.');
-      }
+      throw new Error(`Failed to upload large file to Supabase Storage: ${error instanceof Error ? error.message : 'Unknown error'}. Please ensure: 1) Supabase Storage bucket 'audio-files' exists, 2) Bucket is public OR RLS policies allow INSERT, 3) NEXT_PUBLIC_SUPABASE_KEY is configured.`);
     }
   }
   
