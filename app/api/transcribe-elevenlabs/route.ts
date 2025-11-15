@@ -131,8 +131,8 @@ export async function POST(request: NextRequest) {
         statusText: response.statusText,
         error: errorData,
         fileSize: `${fileSizeMB.toFixed(2)}MB`,
-        fileName: file.name,
-        fileType: file.type,
+        fileName: fileName,
+        fileType: fileType,
       });
       
       // Provide helpful error messages
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
       
       if (response.status === 400) {
         errorMessage = `ElevenLabs rejected the file. ${errorMessage}. ` +
-          `File: ${file.name} (${fileSizeMB.toFixed(2)}MB, type: ${file.type || 'unknown'}). ` +
+          `File: ${fileName} (${fileSizeMB.toFixed(2)}MB, type: ${fileType || 'unknown'}). ` +
           `Check if the file format is supported (MP3, WAV, M4A, etc.) and not corrupted.`;
       } else if (response.status === 401) {
         errorMessage = `Invalid ElevenLabs API key. Please check your ELEVENLABS_API_KEY environment variable.`;
@@ -155,8 +155,8 @@ export async function POST(request: NextRequest) {
         
         // Retry without model_id (use default model)
         const fallbackFormData = new FormData();
-        const fallbackBlob = new Blob([arrayBuffer], { type: file.type || 'audio/mpeg' });
-        fallbackFormData.append('file', fallbackBlob, file.name);
+        const fallbackBlob = new Blob([arrayBuffer], { type: fileType });
+        fallbackFormData.append('file', fallbackBlob, fileName);
         fallbackFormData.append('language', 'hin');
         // Don't add model_id - use default
         // Still enable diarization
@@ -235,9 +235,9 @@ export async function POST(request: NextRequest) {
         }
         
         errorMessage = `ElevenLabs cannot process this file. ${errorMessage}. ` +
-          `Possible issues: Unsupported file format (${file.type || 'unknown'}), corrupted file, or invalid model_id. ` +
+          `Possible issues: Unsupported file format (${fileType || 'unknown'}), corrupted file, or invalid model_id. ` +
           `Supported formats: MP3, WAV, M4A, FLAC, OGG. ` +
-          `File: ${file.name} (${fileSizeMB.toFixed(2)}MB).`;
+          `File: ${fileName} (${fileSizeMB.toFixed(2)}MB).`;
       } else if (response.status === 429) {
         errorMessage = `ElevenLabs rate limit exceeded. Please try again in a few moments.`;
       }
