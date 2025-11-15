@@ -3,171 +3,123 @@
 export interface TranscriptionResult {
   hindiText?: string;
   englishText: string;
-  segments?: Array<{ start: number; end: number; text: string }>;
+  segments?: Array<{ start: number; end: number; text: string; speaker?: string }>;
+  speakers?: string[];
 }
-
-
-async function splitAudioFile(audioFile: File, segmentMinutes = 10): Promise<File[]> {
-  const audioCtx = new AudioContext();
-  const arrayBuffer = await audioFile.arrayBuffer();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-  const segmentSamples = segmentMinutes * 60 * audioBuffer.sampleRate;
-  const chunks: File[] = [];
-
-  for (let start = 0; start < audioBuffer.length; start += segmentSamples) {
-    const end = Math.min(start + segmentSamples, audioBuffer.length);
-    const chunkBuffer = audioCtx.createBuffer(
-      audioBuffer.numberOfChannels,
-      end - start,
-      audioBuffer.sampleRate
-    );
-
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const channelData = audioBuffer.getChannelData(ch).slice(start, end);
-      chunkBuffer.copyToChannel(channelData, ch, 0);
-    }
-
-    // Convert chunkBuffer → WAV Blob
-    const wavBlob = bufferToWavBlob(chunkBuffer);
-    const chunkFile = new File([wavBlob], `chunk_${chunks.length + 1}.wav`, { type: 'audio/wav' });
-    chunks.push(chunkFile);
-  }
-  return chunks;
-}
-
-// --- NEW: convert AudioBuffer → WAV Blob ---
-function bufferToWavBlob(buffer: AudioBuffer): Blob {
-  const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
-  const result = new ArrayBuffer(length);
-  const view = new DataView(result);
-  let offset = 0;
-  let pos = 0;
-
-  function setUint16(data: number) {
-    view.setUint16(pos, data, true);
-    pos += 2;
-  }
-
-  function setUint32(data: number) {
-    view.setUint32(pos, data, true);
-    pos += 4;
-  }
-
-  // RIFF header
-  setUint32(0x46464952); // "RIFF"
-  setUint32(length - 8);
-  setUint32(0x45564157); // "WAVE"
-
-  // fmt chunk
-  setUint32(0x20746d66); // "fmt "
-  setUint32(16);
-  setUint16(1);
-  setUint16(numOfChan);
-  setUint32(buffer.sampleRate);
-  setUint32(buffer.sampleRate * 2 * numOfChan);
-  setUint16(numOfChan * 2);
-  setUint16(16);
-
-  // data chunk
-  setUint32(0x61746164); // "data"
-  setUint32(length - pos - 4);
-
-  // Write interleaved data
-  const channels = [];
-  for (let i = 0; i < numOfChan; i++) channels.push(buffer.getChannelData(i));
-  let interleaved = new Float32Array(buffer.length * numOfChan);
-  for (let i = 0, index = 0; i < buffer.length; i++) {
-    for (let ch = 0; ch < numOfChan; ch++) interleaved[index++] = channels[ch][i];
-  }
-
-  for (let i = 0; i < interleaved.length; i++, pos += 2) {
-    const s = Math.max(-1, Math.min(1, interleaved[i]));
-    view.setInt16(pos, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-
-  return new Blob([result], { type: 'audio/wav' });
-}
-
-// --- NEW: Progress callback type ---
-export type ProgressCallback = (progress: number) => void;
 
 /**
- * Transcribe long Hindi audio in chunks, avoiding Whisper rate limits
- * Includes optional progress updates
+ * Transcribe Hindi audio using ElevenLabs Scribe v2 Realtime
+ * @param audioFile - The audio file to transcribe
  */
-export async function transcribeHindiAudio(
-  audioFile: File,
-  onProgress?: ProgressCallback
-): Promise<TranscriptionResult> {
-  // Split file into ~10-minute chunks
-  const chunks = await splitAudioFile(audioFile, 1);
-  const totalChunks = chunks.length;
+async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  
+  const response = await fetch('/api/transcribe-elevenlabs', {
+    method: 'POST',
+    body: formData,
+  });
 
-  let combinedHindi = '';
-  let combinedEnglish = '';
-  const allSegments: Array<{ start: number; end: number; text: string }> = [];
-
-  for (let i = 0; i < totalChunks; i++) {
-    const chunk = chunks[i];
-
-    // Step 1: Hindi transcription
-    const hindiFormData = new FormData();
-    hindiFormData.append('file', chunk);
-    hindiFormData.append('model', 'whisper-1');
-    hindiFormData.append('language', 'hi');
-
-    const hindiResponse = await fetch('/api/transcribe', {
-      method: 'POST',
-      body: hindiFormData,
-    });
-
-    if (!hindiResponse.ok) {
-      const error = await hindiResponse.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `Hindi transcription failed for chunk ${i + 1}`);
-    }
-
-    const hindiData = await hindiResponse.json();
-    combinedHindi += hindiData.text + '\n';
-
-    // Step 2: English translation
-    const englishFormData = new FormData();
-    englishFormData.append('file', chunk);
-    englishFormData.append('model', 'whisper-1');
-
-    const englishResponse = await fetch('/api/translate', {
-      method: 'POST',
-      body: englishFormData,
-    });
-
-    if (!englishResponse.ok) {
-      const error = await englishResponse.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `Translation failed for chunk ${i + 1}`);
-    }
-
-    const englishData = await englishResponse.json();
-    combinedEnglish += englishData.text + '\n';
-    if (englishData.segments) {
-      allSegments.push(...englishData.segments);
-    }
-
-    // Update progress (0–100%)
-    if (onProgress) {
-      onProgress(Math.round(((i + 1) / totalChunks) * 100));
-    }
-
-    // Delay to avoid rate-limit bursts
-    await new Promise((r) => setTimeout(r, 1500));
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'ElevenLabs transcription failed' }));
+    throw new Error(error.error || 'ElevenLabs transcription failed');
   }
 
-  return {
-    hindiText: combinedHindi.trim(),
-    englishText: combinedEnglish.trim(),
-    segments: allSegments.length > 0 ? allSegments : undefined,
-  };
+  const data = await response.json();
+  
+  // If diarization data is available, log it
+  if (data.speakers && data.speakers.length > 0) {
+    console.log(`[ElevenLabs] Detected ${data.speakers.length} speaker(s): ${data.speakers.join(', ')}`);
+  }
+  
+  // Return the transcript text (which may include speaker labels if diarization is enabled)
+  return data.text;
 }
 
+/**
+ * Translate Hindi text to English using OpenAI GPT
+ * Automatically handles chunking for long texts
+ */
+async function translateHindiToEnglish(hindiText: string): Promise<string> {
+  const textLength = hindiText.length;
+  console.log(`[Translation] Starting translation of ${textLength} characters...`);
+  
+  // Calculate expected time based on text length
+  // GPT-5 may be slower: roughly 60-90 seconds per chunk
+  // Chunks are processed in parallel, so timeout = time for slowest chunk + overhead
+  const estimatedChunks = Math.ceil(textLength / 6000);
+  const estimatedTimePerChunk = 120000; // 2 minutes per chunk (conservative for GPT-5)
+  const overhead = 60000; // 1 minute overhead for parallel processing and network
+  const estimatedTimeMs = Math.max(
+    300000, // Minimum 5 minutes
+    estimatedTimePerChunk + overhead // Time for slowest chunk + overhead (chunks process in parallel)
+  );
+  const timeoutMs = Math.min(600000, estimatedTimeMs); // Max 10 minutes
+  
+  console.log(`[Translation] Timeout set to ${(timeoutMs / 1000 / 60).toFixed(1)} minutes for ${textLength} characters`);
+  
+  const response = await fetch('/api/translate-text', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: hindiText,
+    }),
+    signal: AbortSignal.timeout(timeoutMs), // Dynamic timeout based on text length
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Translation failed' }));
+    const errorMessage = errorData.error || errorData.message || 'Translation failed';
+    console.error(`[Translation] Failed (${response.status}):`, errorMessage);
+    throw new Error(`Translation failed: ${errorMessage}`);
+  }
+
+  const data = await response.json();
+  const englishText = data.text;
+  
+  if (!englishText || englishText.trim().length === 0) {
+    throw new Error('Translation returned empty text');
+  }
+  
+  console.log(`[Translation] Complete: ${englishText.length} characters translated`);
+  return englishText;
+}
+
+/**
+ * Transcribe Hindi audio and translate to English using ElevenLabs Scribe v2 Realtime
+ * Returns both Hindi and English transcripts
+ * Uses only ElevenLabs - no fallbacks
+ */
+export async function transcribeHindiAudio(audioFile: File): Promise<TranscriptionResult> {
+  const fileSize = audioFile.size;
+  const fileSizeMB = fileSize / (1024 * 1024);
+
+  try {
+    console.log(`[ElevenLabs Scribe v2] Starting transcription for ${fileSizeMB.toFixed(2)}MB file...`);
+    console.log('Step 1: Transcribing Hindi audio with ElevenLabs Scribe v2 Realtime...');
+    
+    const hindiText = await transcribeWithElevenLabs(audioFile);
+    console.log(`✓ Hindi transcript received (${hindiText.length} characters)`);
+    console.log('Hindi preview:', hindiText.substring(0, 100) + '...');
+    
+    if (!hindiText || hindiText.trim().length === 0) {
+      throw new Error('Empty Hindi transcript received from ElevenLabs');
+    }
+
+    console.log('Step 2: Translating Hindi text to English...');
+    const englishText = await translateHindiToEnglish(hindiText);
+    console.log(`✓ English translation received (${englishText.length} characters)`);
+    console.log('English preview:', englishText.substring(0, 100) + '...');
+    console.log('✓ ElevenLabs Scribe v2 Realtime transcription and translation successful');
+    
+    return { hindiText, englishText };
+  } catch (error) {
+    console.error('[ElevenLabs] Transcription error:', error);
+    throw error;
+  }
+}
 
 /**
  * Use OpenAI GPT to extract answers from English transcript based on questions

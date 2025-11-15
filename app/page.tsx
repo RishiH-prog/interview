@@ -15,6 +15,7 @@ import {
 } from '@/lib/database';
 import { parseGuideFile, generateId, downloadTextFile } from '@/lib/utils';
 import { transcribeHindiAudio, extractAnswersWithGPT } from '@/lib/transcription';
+import { checkFileSize } from '@/lib/audio-compression';
 import Toast from '@/components/Toast';
 import InterviewModal from '@/components/InterviewModal';
 
@@ -153,21 +154,46 @@ export default function Home() {
     let hindiTranscript: string | undefined;
     let englishTranscript: string | undefined;
 
+    // Get file from input element directly (in case state is out of sync)
+    const fileInput = (e.target as HTMLFormElement).querySelector('input[type="file"]') as HTMLInputElement;
+    const fileFromInput = fileInput?.files?.[0];
+    
+    // Use file from input if state is null/empty but input has a file
+    const fileToProcess = audioFile && audioFile.size > 0 ? audioFile : (fileFromInput && fileFromInput.size > 0 ? fileFromInput : null);
+
+    // Debug: Check if audio file exists
+    console.log('=== DEBUG: Audio File Check ===');
+    console.log('Audio file state:', audioFile);
+    console.log('Audio file from input:', fileFromInput);
+    console.log('File to process:', fileToProcess);
+    console.log('Audio file name:', fileToProcess?.name);
+    console.log('Audio file size:', fileToProcess?.size);
+
     // If audio file is provided, transcribe and extract answers
-    if (audioFile) {
+    if (fileToProcess && fileToProcess.size > 0) {
       setIsTranscribing(true);
       showToast('Transcribing Hindi audio...', 'info');
       
       try {
+        console.log('Starting transcription for file:', fileToProcess.name, 'Size:', (fileToProcess.size / 1024 / 1024).toFixed(2), 'MB');
+        
         // Step 1: Transcribe Hindi audio and translate to English
-        const transcription = await transcribeHindiAudio(audioFile);
+        const transcription = await transcribeHindiAudio(fileToProcess);
+        console.log('Transcription result:', transcription);
+        
         hindiTranscript = transcription.hindiText;
         englishTranscript = transcription.englishText;
+        
+        if (!englishTranscript) {
+          throw new Error('No English transcript received from transcription service');
+        }
         
         showToast('Transcription complete! Extracting answers with AI...', 'info');
         
         // Step 2: Use GPT to extract answers from English transcript
-        answers = await extractAnswersWithGPT(transcription.englishText, guide.questions);
+        console.log('Extracting answers from transcript:', englishTranscript.substring(0, 100) + '...');
+        answers = await extractAnswersWithGPT(englishTranscript, guide.questions);
+        console.log('Extracted answers:', answers);
         
         showToast('Answers extracted successfully!', 'success');
       } catch (error) {
@@ -186,6 +212,8 @@ export default function Home() {
       }
     } else {
       // No audio file - use Lorem Ipsum
+      console.warn('No audio file provided, using Lorem Ipsum');
+      showToast('No audio file provided. Using placeholder text.', 'info');
       answers = guide.questions.map(question => ({
         question,
         answer: generateLoremAnswer(),
@@ -201,8 +229,8 @@ export default function Home() {
       date: interviewDate,
       village,
       farmerName,
-      audioFile: audioFile?.name || 'No file uploaded',
-      status: audioFile && answers.length > 0 ? 'AI-generated' : 'Draft',
+      audioFile: fileToProcess?.name || 'No file uploaded',
+      status: fileToProcess && answers.length > 0 ? 'AI-generated' : 'Draft',
       answers,
       hindiTranscript,
       englishTranscript,
@@ -322,11 +350,30 @@ ${qa.reasoning ? `Reasoning: ${qa.reasoning}` : ''}
     showToast(`Downloaded ${interviewsToDownload.length} interview(s) successfully!`);
   };
 
-  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setAudioFile(file);
+    if (!file) return;
+
+    // Check file size (informational only - no blocking)
+    const sizeCheck = checkFileSize(file, 9999); // Very high limit for informational purposes only
+    
+    const fileSizeMB = file.size / (1024 * 1024);
+    
+    // Inform user about large files (ElevenLabs handles large files well)
+    if (fileSizeMB > 50) {
+      showToast(
+        `📁 Large file (${fileSizeMB.toFixed(2)}MB) detected. Processing may take a few minutes. ElevenLabs will automatically segment files >8 minutes for faster processing.`,
+        'info'
+      );
+    } else if (fileSizeMB > 20) {
+      showToast(
+        `📁 File size: ${fileSizeMB.toFixed(2)}MB. Processing will begin shortly.`,
+        'info'
+      );
     }
+    
+    console.log('File selected:', file.name, fileSizeMB.toFixed(2), 'MB');
+    setAudioFile(file);
   };
 
   // Filter interviews
@@ -523,12 +570,21 @@ ${qa.reasoning ? `Reasoning: ${qa.reasoning}` : ''}
                 accept="audio/*"
                 onChange={handleAudioFileChange}
                 disabled={isTranscribing}
+                required
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-500 file:text-white hover:file:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               {audioFile && (
-                <p className="text-sm text-gray-600 mt-2">
-                  Selected: {audioFile.name} ({(audioFile.size / 1024 / 1024).toFixed(2)} MB)
-                </p>
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                  <strong>Selected:</strong> {audioFile.name} ({(audioFile.size / 1024 / 1024).toFixed(2)} MB)
+                  {audioFile.size === 0 && (
+                    <span className="text-red-600 ml-2">⚠ File appears to be empty! Please select a valid audio file.</span>
+                  )}
+                  {audioFile.size > 50 * 1024 * 1024 && (
+                    <div className="mt-2 text-xs text-blue-700">
+                      💡 Tip: Large files may take longer to process. ElevenLabs automatically segments files >8 minutes for parallel processing.
+                    </div>
+                  )}
+                </div>
               )}
               <p className="text-xs text-gray-500 mt-2">
                 Upload a Hindi audio file to automatically transcribe (Hindi + English), translate, and extract answers using AI. Supported formats: MP3, WAV, M4A, etc.

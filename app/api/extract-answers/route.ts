@@ -74,7 +74,7 @@ Return ONLY valid JSON, no other text.`;
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-5', // Using gpt-4o-mini for cost efficiency, can be changed to gpt-4o or gpt-3.5-turbo
+        model: 'gpt-5', // Using GPT-5 for translation and answer extraction
         messages: [
           {
             role: 'system',
@@ -85,7 +85,7 @@ Return ONLY valid JSON, no other text.`;
             content: prompt,
           },
         ],
-        temperature: 0.3, // Lower temperature for more consistent extraction
+        // GPT-5 only supports default temperature (1), cannot set custom values
         response_format: { type: 'json_object' }, // Force JSON object response
       }),
     });

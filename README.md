@@ -33,7 +33,30 @@ A single-page web application for managing AI-assisted farmer interviews. Built 
 
 ### API Key Setup
 
-This application uses **OpenAI Whisper API** for audio transcription.
+This application uses multiple transcription services with automatic fallback:
+- **ElevenLabs** (RECOMMENDED for large files - auto-segments files >8 min) - Best for Hindi audio
+- **Deepgram** (fastest for smaller files)
+- **AssemblyAI** (fast alternative)
+- **OpenAI Whisper** (fallback - slower but accurate)
+
+**At minimum, you need ONE of these API keys:**
+
+#### Option 1: ElevenLabs (Recommended for Large Files)
+
+1. **Get your ElevenLabs API key**:
+   - Go to [https://elevenlabs.io/](https://elevenlabs.io/)
+   - Sign up or log in
+   - Navigate to your profile/API settings
+   - Generate a new API key
+
+2. **Set up environment variable**:
+   - Create a `.env.local` file in the root directory
+   - Add your API key:
+     ```
+     ELEVENLABS_API_KEY=your-api-key-here
+     ```
+
+#### Option 2: OpenAI (Fallback)
 
 1. **Get your OpenAI API key**:
    - Go to [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
@@ -41,20 +64,20 @@ This application uses **OpenAI Whisper API** for audio transcription.
    - Create a new API key
 
 2. **Set up environment variable**:
-   - Create a `.env.local` file in the root directory
-   - Add your API key:
+   - Add to `.env.local`:
      ```
      OPENAI_API_KEY=sk-your-api-key-here
      ```
-   - Optional: Set transcription language (e.g., `TRANSCRIPTION_LANGUAGE=en` or `hi` for Hindi)
-   
-   **Important**: Never commit your `.env.local` file to version control!
 
-3. **For Vercel deployment**:
-   - Go to your Vercel project settings
-   - Navigate to "Environment Variables"
-   - Add `OPENAI_API_KEY` with your API key value
-   - Redeploy your application
+#### Optional: For Faster Transcription on Smaller Files
+
+- **Deepgram**: Get key from [https://deepgram.com/](https://deepgram.com/) → Add `DEEPGRAM_API_KEY=your-key`
+- **AssemblyAI**: Get key from [https://www.assemblyai.com/](https://www.assemblyai.com/) → Add `ASSEMBLYAI_API_KEY=your-key`
+
+**Important**: 
+- Never commit your `.env.local` file to version control!
+- For Vercel deployment, add the API keys in Project Settings → Environment Variables
+- **ElevenLabs is recommended for large Hindi audio files** (>8 minutes auto-segments in parallel)
 
 ### Installation
 
@@ -225,22 +248,34 @@ Stored in `localStorage` under key `ankur_interviews`:
 
 ## Audio Transcription & Translation
 
-The application uses OpenAI Whisper API and GPT to process Hindi audio interviews. The complete process:
+The application uses multiple transcription services with automatic fallback to process Hindi audio interviews. The complete process:
 
 1. **Upload**: User uploads a Hindi audio file (MP3, WAV, M4A, etc.)
-2. **Hindi Transcription**: Audio is transcribed to Hindi text using Whisper API (language='hi')
-3. **English Translation**: Audio is translated to English using Whisper Translations API
+2. **Hindi Transcription**: Audio is transcribed to Hindi text using:
+   - **ElevenLabs** (recommended for large files - auto-segments files >8 min in parallel)
+   - Deepgram (fastest for smaller files)
+   - AssemblyAI (fast alternative)
+   - OpenAI Whisper (fallback)
+3. **English Translation**: Hindi text is translated to English using GPT-4o-mini
 4. **Answer Extraction**: GPT-4o-mini analyzes the English transcript and extracts answers for each question
 5. **Auto-fill**: Answers are automatically populated in the interview form
 6. **Both transcripts are saved** for reference (Hindi and English)
 
 ### Workflow
 
-- **Hindi Audio** → **Whisper (Hindi)** → **Hindi Transcript** (saved)
-- **Hindi Audio** → **Whisper Translations** → **English Transcript** (saved)
+- **Hindi Audio** → **Transcription Service (Hindi)** → **Hindi Transcript** (saved)
+- **Hindi Transcript** → **GPT-4o-mini Translation** → **English Transcript** (saved)
 - **English Transcript** → **GPT-4o-mini** → **Extracted Answers** (auto-filled)
 
+### Large File Handling
+
+**ElevenLabs is optimized for large files:**
+- Files >8 minutes are automatically segmented into parallel chunks (up to 4 concurrent)
+- Concurrency = min(4, ceil(duration_secs / 480))
+- Example: 15-minute file → 2 concurrent segments for faster processing
+
 **Cost Note**: 
+- **ElevenLabs**: Check [ElevenLabs Pricing](https://elevenlabs.io/pricing) for current rates
 - OpenAI Whisper API charges based on audio duration (~$0.006 per minute)
 - GPT-4o-mini charges per token (~$0.15 per 1M input tokens, ~$0.60 per 1M output tokens)
 - Check [OpenAI Pricing](https://openai.com/pricing) for current rates.

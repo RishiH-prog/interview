@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 300; // 5 minutes for large files
 
 export async function POST(request: NextRequest) {
   try {

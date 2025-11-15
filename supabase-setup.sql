@@ -37,6 +37,10 @@ ALTER TABLE interviews ENABLE ROW LEVEL SECURITY;
 -- These policies allow anyone to read/write data
 -- You can restrict this later based on authentication
 
+-- Drop existing policies if they exist (allows re-running this script)
+DROP POLICY IF EXISTS "Allow all operations on guides" ON guides;
+DROP POLICY IF EXISTS "Allow all operations on interviews" ON interviews;
+
 CREATE POLICY "Allow all operations on guides" ON guides
   FOR ALL USING (true) WITH CHECK (true);
 

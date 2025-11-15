@@ -49,10 +49,15 @@ This is the easiest method and allows for automatic deployments on every push.
 
 4. **Add Environment Variables**:
    - Click "Environment Variables"
-   - Add the following:
+   - Add at least one transcription service API key:
+     - **Name**: `ELEVENLABS_API_KEY` (RECOMMENDED for large files)
+     - **Value**: Your ElevenLabs API key
+     - **Environment**: Select all (Production, Preview, Development)
+   - OR add fallback:
      - **Name**: `OPENAI_API_KEY`
      - **Value**: Your OpenAI API key (starts with `sk-`)
-     - **Environment**: Select all (Production, Preview, Development)
+     - **Environment**: Select all
+   - (Optional) Add `DEEPGRAM_API_KEY` or `ASSEMBLYAI_API_KEY` for faster transcription
    - Click "Save"
 
 5. **Deploy**:
@@ -137,12 +142,19 @@ If you want automated deployments on every push:
 
 ## Environment Variables
 
-### Required
+### Required (at least one transcription service)
 
-- `OPENAI_API_KEY`: Your OpenAI API key for transcription and answer extraction
+- `ELEVENLABS_API_KEY`: **RECOMMENDED** - ElevenLabs API key for large file transcription (best for Hindi audio)
+- OR `OPENAI_API_KEY`: OpenAI API key for Whisper transcription and GPT translation/extraction (fallback)
+- OR `DEEPGRAM_API_KEY`: Deepgram API key for fast transcription (smaller files)
+- OR `ASSEMBLYAI_API_KEY`: AssemblyAI API key for fast transcription (alternative)
 
-### Optional
+**Note**: You need at least one transcription service API key. ElevenLabs is recommended for large Hindi audio files as it automatically segments files >8 minutes for parallel processing.
 
+### Optional (for faster/smaller file transcription)
+
+- `DEEPGRAM_API_KEY`: For fastest transcription on smaller files
+- `ASSEMBLYAI_API_KEY`: For fast alternative transcription
 - `TRANSCRIPTION_LANGUAGE`: Language code for transcription (default: auto-detect)
 
 ## Troubleshooting
