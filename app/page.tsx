@@ -581,7 +581,7 @@ ${qa.reasoning ? `Reasoning: ${qa.reasoning}` : ''}
                   )}
                   {audioFile.size > 50 * 1024 * 1024 && (
                     <div className="mt-2 text-xs text-blue-700">
-                      💡 Tip: Large files may take longer to process. ElevenLabs automatically segments files >8 minutes for parallel processing.
+                      💡 Tip: Large files may take longer to process. ElevenLabs automatically segments files &gt;8 minutes for parallel processing.
                     </div>
                   )}
                 </div>
