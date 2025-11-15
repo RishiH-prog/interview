@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
-export const maxDuration = 600; // 10 minutes for large translations with GPT-5
+export const maxDuration = 300; // 5 minutes (max for Vercel Hobby plan) for large translations with GPT-5
 
 /**
  * Chunk text into smaller segments for translation
