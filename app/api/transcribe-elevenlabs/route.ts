@@ -12,11 +12,13 @@ export const maxDuration = 300; // 5 minutes for large files
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const file = formData.get('file') as File | null;
+    const fileUrl = formData.get('fileUrl') as string | null;
 
-    if (!file) {
+    // Support both direct file upload and URL-based upload (for large files)
+    if (!file && !fileUrl) {
       return NextResponse.json(
-        { error: 'No audio file provided' },
+        { error: 'No audio file or file URL provided' },
         { status: 400 }
       );
     }
@@ -30,11 +32,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const fileSizeMB = file.size / (1024 * 1024);
-    console.log(`[ElevenLabs Scribe v2] Processing file: ${file.name}, Size: ${fileSizeMB.toFixed(2)}MB, Type: ${file.type}`);
+    let arrayBuffer: ArrayBuffer;
+    let fileSizeMB: number;
+    let fileName: string;
+    let fileType: string;
 
-    // Convert File to buffer for ElevenLabs API
-    const arrayBuffer = await file.arrayBuffer();
+    // If file URL is provided (for large files from Supabase), fetch it
+    if (fileUrl) {
+      console.log(`[ElevenLabs Scribe v2] Fetching file from URL: ${fileUrl}`);
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: `Failed to fetch file from URL: ${response.statusText}` },
+          { status: 500 }
+        );
+      }
+      arrayBuffer = await response.arrayBuffer();
+      fileSizeMB = arrayBuffer.byteLength / (1024 * 1024);
+      fileName = fileUrl.split('/').pop() || 'audio-file';
+      fileType = response.headers.get('content-type') || 'audio/mpeg';
+      console.log(`[ElevenLabs Scribe v2] Processing file from URL: ${fileName}, Size: ${fileSizeMB.toFixed(2)}MB`);
+    } else if (file) {
+      // Direct file upload (for smaller files)
+      fileSizeMB = file.size / (1024 * 1024);
+      fileName = file.name;
+      fileType = file.type || 'audio/mpeg';
+      console.log(`[ElevenLabs Scribe v2] Processing file: ${fileName}, Size: ${fileSizeMB.toFixed(2)}MB, Type: ${fileType}`);
+      arrayBuffer = await file.arrayBuffer();
+    } else {
+      return NextResponse.json(
+        { error: 'Invalid request: no file or fileUrl provided' },
+        { status: 400 }
+      );
+    }
 
     // ElevenLabs Scribe v2 Realtime endpoint
     // Supports large files and real-time processing with ~150ms latency
@@ -44,8 +74,8 @@ export async function POST(request: NextRequest) {
 
     // Create FormData for ElevenLabs
     const elevenLabsFormData = new FormData();
-    const blob = new Blob([arrayBuffer], { type: file.type || 'audio/mpeg' });
-    elevenLabsFormData.append('file', blob, file.name);
+    const blob = new Blob([arrayBuffer], { type: fileType });
+    elevenLabsFormData.append('file', blob, fileName);
     
     // Add language parameter for Hindi (language code: "hin")
     elevenLabsFormData.append('language', 'hin');

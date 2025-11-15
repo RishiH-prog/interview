@@ -12,8 +12,80 @@ export interface TranscriptionResult {
  * @param audioFile - The audio file to transcribe
  */
 async function transcribeWithElevenLabs(audioFile: File): Promise<string> {
+  const fileSizeMB = audioFile.size / (1024 * 1024);
+  const VERCEL_SIZE_LIMIT_MB = 20; // Use Supabase for files > 20MB to avoid Vercel's 25MB limit
+  
+  let fileUrl: string | null = null;
+  
+  // For large files (>20MB), upload directly to Supabase Storage from client to bypass Vercel's 25MB limit
+  if (fileSizeMB > VERCEL_SIZE_LIMIT_MB) {
+    console.log(`[ElevenLabs] File is ${fileSizeMB.toFixed(2)}MB, uploading directly to Supabase Storage...`);
+    
+    try {
+      // Import Supabase client (already configured with NEXT_PUBLIC_ variables)
+      const { supabase } = await import('./supabase');
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const fileName = `audio-uploads/${timestamp}-${audioFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      
+      // Convert file to array buffer
+      const arrayBuffer = await audioFile.arrayBuffer();
+      
+      console.log(`[ElevenLabs] Uploading ${fileSizeMB.toFixed(2)}MB to Supabase Storage bucket 'audio-files'...`);
+      
+      // Upload directly to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('audio-files')
+        .upload(fileName, arrayBuffer, {
+          contentType: audioFile.type || 'audio/mpeg',
+          upsert: false,
+        });
+      
+      if (uploadError) {
+        throw new Error(`Failed to upload to Supabase: ${uploadError.message}`);
+      }
+      
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('audio-files')
+        .getPublicUrl(fileName);
+      
+      fileUrl = urlData.publicUrl;
+      console.log(`[ElevenLabs] File uploaded to Supabase: ${fileUrl}`);
+    } catch (error) {
+      console.error('[ElevenLabs] Supabase upload error:', error);
+      // Fallback: try using the API route (might fail for very large files)
+      console.log('[ElevenLabs] Falling back to API route upload...');
+      
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', audioFile);
+      
+      const uploadResponse = await fetch('/api/upload-to-supabase', {
+        method: 'POST',
+        body: uploadFormData,
+      });
+      
+      if (uploadResponse.ok) {
+        const uploadData = await uploadResponse.json();
+        fileUrl = uploadData.fileUrl;
+        console.log(`[ElevenLabs] File uploaded via API: ${fileUrl}`);
+      } else {
+        throw new Error('Failed to upload large file. Please ensure Supabase Storage is configured.');
+      }
+    }
+  }
+  
+  // Create form data for transcription
   const formData = new FormData();
-  formData.append('file', audioFile);
+  
+  if (fileUrl) {
+    // Use URL for large files
+    formData.append('fileUrl', fileUrl);
+  } else {
+    // Direct file upload for smaller files
+    formData.append('file', audioFile);
+  }
   
   const response = await fetch('/api/transcribe-elevenlabs', {
     method: 'POST',
